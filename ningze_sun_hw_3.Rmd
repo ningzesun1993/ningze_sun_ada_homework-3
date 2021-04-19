@@ -1,0 +1,355 @@
+---
+title: "ningze_sun_hw3"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+```{r load_lib, warning = 0, message = 0}
+
+library(tidyverse)
+library(dplyr)
+library(ggplot2)
+library(reshape2)
+library(ggpubr)
+theme_set(theme_pubr())
+library(manipulate)
+library(patchwork)
+library(infer)
+library(broom)
+
+
+labels_make = function(linear, x = 'Brain_Size_Species_Mean'){
+  linear_res = linear[["coefficients"]]
+  slope = linear_res[[x]]
+  intercept = linear_res[['(Intercept)']]
+  labels = paste("E[Y|X] =", toString(round(slope, digits = 3)), "X +",  
+                 toString(round(intercept, digits = 3)))
+  return(list(slope = slope, intercept = intercept, labels = labels))
+}
+
+
+cal_ci = function(means, std, n, conf = 0.975){
+  error = qnorm(conf) * std / sqrt(n)
+  return(c(means - error, means + error))
+}
+
+```
+
+
+
+## Challenge 1
+
+Fit a simple linear regression model to predict weaning age (WeaningAge_d) measured in days from species’ brain size (Brain_Size_Species_Mean) measured in grams. 
+
+
+Try both models: weaning age ~ brain size and log(weaning age) ~ log(brain size).
+
+### 1
+
+I did it by lm function and produce a scatterplot with the fitted line superimposed upon the data
+
+For weaning age ~ brain size model
+
+
+```{r 1-1a}
+df = as_tibble(read.csv("KamilarAndCooperData.csv"))
+df_lm = df[c("WeaningAge_d", "Brain_Size_Species_Mean")] %>% drop_na()
+linear = lm(WeaningAge_d ~ Brain_Size_Species_Mean, data = df_lm)
+linear_res = labels_make(linear)
+ggplot(data = df_lm, aes(x = Brain_Size_Species_Mean, y = WeaningAge_d)) + geom_point() + 
+  geom_abline(intercept = linear_res[['intercept']], slope = linear_res[['slope']], col = 'blue') + 
+  geom_text(x = 400, y = 1200, label = linear_res[['labels']], size = 4) +
+  ggtitle("The fit model of weaning age ~ brain size")
+
+```
+
+
+
+For log(weaning age) ~ brain size model
+
+
+```{r 1-1b}
+log_linear = lm(log(WeaningAge_d) ~ log(Brain_Size_Species_Mean), data = df_lm)
+log_linear_res = labels_make(log_linear, x = 'log(Brain_Size_Species_Mean)')
+
+ggplot(data = df_lm, aes(x = log(Brain_Size_Species_Mean), y = log(WeaningAge_d))) + geom_point() + 
+  geom_abline(intercept = log_linear_res[['intercept']], slope = log_linear_res[['slope']], col = 'blue') + 
+  geom_text(x = 5.7, y = 6.65, label = log_linear_res[['labels']], size = 4) + 
+  ggtitle("The fit model of log(weaning age) ~ log(brain size)")
+
+```
+
+### 2
+
+
+Identify and interpret the point estimate of the slope, as well as the outcome of the test associated with the hypotheses. Also, find a 90% CI for the slope parameter.
+
+
+
+```{r 1-2a}
+b = summary(linear)[['coefficients']][[2]]
+b_log = summary(log_linear)[['coefficients']][[2]]
+print(paste("regular model's estimated beta_1 is", toString(b), ", log model's estimated beta_1 is", toString(b_log)))
+```
+
+For explanation of beta_1:
+
+in regular model with one unit of brain size increasing, the average of weaning age increases by around 2.637.
+
+in log model, with one unit of log(brain size) increase, the average of log(weaning age) increases by around 0.571
+
+
+```{r 1-2b}
+
+b_t = tidy(linear)
+b_log_t = tidy(log_linear)
+linear_ci = confint(linear, "Brain_Size_Species_Mean", level = 0.9)
+log_linear_ci = confint(log_linear, "log(Brain_Size_Species_Mean)", level = 0.9)
+print(paste("t value of regular model of beta_1 is ", toString(b_t[['statistic']][[2]])))
+print(paste("t value of log model of beta_1 is ", toString(b_log_t[['statistic']][[2]])))
+print(paste("p value of regular model of beta_1 is ", toString(b_t[['p.value']][[2]])))
+print(paste("p value of log model of beta_1 is ", toString(b_log_t[['p.value']][[2]])))
+print(paste("CI of beta_1 of regular model is ", toString(linear_ci)))
+print(paste("CI of beta_1 of log model is ", toString(log_linear_ci)))
+```
+
+### 3
+
+```{r 1-3a}
+p = data.frame(df_lm[['Brain_Size_Species_Mean']])
+names(p) = 'Brain_Size_Species_Mean'
+pi = predict(linear, newdata = p, interval = 'prediction', level = 0.9)
+pi = cbind(df_lm$Brain_Size_Species_Mean, data.frame(pi))
+names(pi) = c('Brain_Size_Species_Mean', 'fit', 'lwr', 'upr')
+df_pi = melt(pi, id = 'Brain_Size_Species_Mean')
+
+ggplot(data = df_pi) + geom_line(aes(x = Brain_Size_Species_Mean, y = value, color = variable)) + 
+  geom_point(data = df_lm, aes(x = Brain_Size_Species_Mean, y = WeaningAge_d)) + 
+  ggtitle("y ~ x linear regression with 90% prediction confidence interval")
+```
+
+```{r 1-3b}
+p = data.frame(df_lm[['Brain_Size_Species_Mean']])
+names(p) = 'Brain_Size_Species_Mean'
+pi = predict(log_linear, newdata = p, interval = 'prediction', level = 0.9)
+pi = cbind(log(p), data.frame(pi))
+names(pi) = c('Brain_Size_Species_Mean', 'fit', 'lwr', 'upr')
+df_pi = melt(pi, id = 'Brain_Size_Species_Mean')
+ggplot(data = df_pi) + geom_line(aes(x = Brain_Size_Species_Mean, y = value, color = variable)) + 
+  geom_point(data = df_lm, aes(x = log(Brain_Size_Species_Mean), y = log(WeaningAge_d))) + 
+  ggtitle("log(y) ~ log(x) linear regression with 90% prediction confidence interval")
+```
+
+### 4
+
+```{r 1-4}
+pe = predict(linear, newdata = data.frame(Brain_Size_Species_Mean = 750), 
+                         interval = 'confidence', level = 0.9)
+pe_log = exp(predict(log_linear, newdata = data.frame(Brain_Size_Species_Mean = 750), 
+                                  interval = 'confidence', level = 0.9))
+print(paste("The prediction of 750 of regular model is ", toString(pe[[1]])))
+print(paste("The prediction of 750 of log model is ", toString(pe_log[[1]])))
+print(paste("The prediction of lower band and upper band of 750 of regular model is ", toString(pe[c(2,3)])))
+print(paste("The prediction of lower band and upper band of 750 of log model is ", toString(pe_log[c(2,3)])))
+```
+
+I will not trust these data, since it is far away from the mean of the X, and it is not a good idea to predict the value out of range of X range. The CI is too large to be trusted.
+
+### 5
+
+I think log model looks better, because with log transformation, the data distributed are more linear compared with regular model. And I think they are more normal distributed:
+
+```{r 1-5}
+
+a = ggplot(df_lm, aes(sample = Brain_Size_Species_Mean)) + stat_qq() + stat_qq_line() + ggtitle("qq plot for Brain Size Species Mean")
+
+b = ggplot(df_lm, aes(sample = log(Brain_Size_Species_Mean))) + stat_qq() + stat_qq_line() + ggtitle("qq plot for log(Brain Size Species Mean)")
+
+c = ggplot(df_lm, aes(sample = WeaningAge_d)) + stat_qq() + stat_qq_line() + ggtitle("qq plot for WeaningAge")
+
+d = ggplot(df_lm, aes(sample = log(WeaningAge_d))) + stat_qq() + stat_qq_line() + ggtitle("qq plot for log(WeaningAge)")
+
+ggarrange(a, b, c, d, labels = c('a', 'b', 'c', 'd'), ncol = 2, nrow = 2)
+
+```
+
+
+## challenge 2
+
+We could use bootstrapping to estimate standard errors and confidence intervals around certain parameter values, we can also do the same for estimating standard errors and CIs around regression parameters.
+
+### 1
+ 
+run a linear regression looking at log(MeanGroupSize) ~ log(Body_mass_female_mean) and report coeffiecients (slope and intercept)
+
+```{r 2-1}
+linear = lm(log(MeanGroupSize) ~ log(Body_mass_female_mean), data = df)
+linear[['coefficients']]
+```
+
+### 2
+
+use bootstrapping to sample from the dataset 1000 times with replacement, each time fitting the same model and calculating the appropriate coefficients. This generates a bootstrap sampling distribution for each coefficient. Plot a histogram of these sampling distributions.
+
+```{r 2-2}
+df_n = df[c('MeanGroupSize', 'Body_mass_female_mean')] %>% drop_na()
+slope = list()
+intercept = list()
+for (i in 1:1000){
+  df_d = sample_n(df_n, nrow(df_n), replace = TRUE)
+  linear_t = lm(log(MeanGroupSize) ~ log(Body_mass_female_mean), data = df_d)
+  coef = linear_t[['coefficients']]
+  intercept[[i]] = coef[['(Intercept)']]
+  slope[[i]] = coef[['log(Body_mass_female_mean)']]
+}
+intercept = as.numeric(matrix(intercept))
+slope = as.numeric(matrix(slope))
+df_co = data.frame(intercept)
+df_co[['slope']] = slope
+a = ggplot(data = df_co, aes(x = slope)) + geom_histogram(bins = 30) + ggtitle("Slope histograme")
+b = ggplot(data = df_co, aes(x = intercept)) + geom_histogram(bins = 30)+ ggtitle("intercept histograme")
+ggarrange(a, b, labels = c('a', 'b'), ncol = 2, nrow = 1)
+```
+
+### 3
+
+Estimate the standard error for coefficients as the standard deviation of the sampling distribution from your bootstrap.
+
+```{r 2-3}
+intercept_sd = sd(df_co[['intercept']])
+slope_sd = sd(df_co[['slope']])
+print(paste("std of intercept is ", intercept_sd))
+print(paste("std of slope is ", slope_sd))
+```
+
+### 4
+
+Determine the 95% CI for coefficients based on the appropriate quantiles from sampling distribution.
+
+```{r 2-4}
+intercept_ci = quantile(df_co[['intercept']], probs = c(0.025, 0.975))
+slope_ci = quantile(df_co[['slope']], probs = c(0.025, 0.975))
+print(paste("CI of intercept is ", intercept_ci))
+print(paste("CI of slope is ", slope_ci))
+```
+
+### 5
+
+How do the SEs estimated from the bootstrap sampling distribution compare to those estimated mathematically as part of lm() function?
+
+
+```{r 2-5}
+summary(linear)[['coefficients']]
+```
+
+The bootstrap sampling distribution std is very similar compared with etimated mathematical result from lm() function
+
+### 6
+
+How do bootstrap CIs compare to those estimated mathematically as part of the lm() function?
+
+
+```{r 2-6}
+ confint(linear, level = 0.95)
+```
+
+The bootstrap sampling distribution CI is very similar compared with etimated mathematical result from lm() function
+
+
+## Challenge 3
+
+
+
+```{r 3_lib}
+boot_lm = function(d, model, conf.level = 0.95, reps = 1000){
+  linear = lm(model, data = d)
+  col_name = names(linear[['coefficients']])
+  sum_linear = summary(linear)
+  df_r = data.frame(sum_linear[['coefficients']][,c('Estimate', 'Std. Error')])
+  df_co = data.frame(confint(linear, c(col_name), conf.level))
+  df_r = merge(df_r, df_co, by = 0)
+  names(df_r) = c("beta", "Estimate", "standard_error", "lower", "upper")
+  coef = list()
+  col_name = df_r$beta
+  for (i in df_r$beta){
+    coef[[i]] = list()
+  }
+  for (i in 1:reps){
+    df_d = sample_n(d, nrow(df), replace = TRUE)
+    linear_t = lm(model, data = df_d)
+    for (col in col_name){
+      coef[[col]][[i]] = linear_t[['coefficients']][[col]]
+    }
+  }
+  df_f = data.frame(as.numeric(matrix(coef[[col_name[[1]]]])))
+  names(df_f) = col_name[[1]]
+  for (i in 2:length(col_name)){
+    df_f[[col_name[[i]]]] = as.numeric(matrix(coef[[col_name[[i]]]]))
+  }
+  means = list()
+  std = list()
+  lower = list()
+  upper = list()
+  for (i in 1:length(col_name)){
+    means[[i]] = mean(df_f[[i]])
+    std[[i]] = sd(df_f[[i]])
+    lower[[i]] = quantile(df_f[[col_name[[i]]]], probs = (1-conf.level) / 2)[[1]]
+    upper[[i]] = quantile(df_f[[col_name[[i]]]], probs = 1 - (1 - conf.level)/2)[[1]]
+  }
+  df_r[['estimate_sample']] = unlist(means)
+  df_r[['standard_error_sample']] = unlist(std)
+  df_r[['lower_sample']] = unlist(lower)
+  df_r[['upper_sample']] = unlist(upper)
+  # print(class(df_r[['estimate_sample']]))
+  return(df_r)
+}
+```
+
+log(MeanGroupSize) ~ log(Body_mass_female_mean)
+
+```{r 3_1}
+res_1 = boot_lm(df, 'log(MeanGroupSize) ~ log(Body_mass_female_mean)')
+res_1
+```
+
+log(DayLength_km) ~ log(Body_mass_female_mean)
+
+```{r 3_2}
+res_2 = boot_lm(df, 'log(DayLength_km) ~ log(Body_mass_female_mean)')
+res_2
+```
+
+log(DayLength_km) ~ log(Body_mass_female_mean) + log(MeanGroupSize)
+
+```{r 3_3}
+res_3 = boot_lm(df, 'log(DayLength_km) ~ log(Body_mass_female_mean) + log(MeanGroupSize)')
+res_3
+```
+
+
+## Extra credit
+
+
+```{r extra}
+df_drop = df[c('MeanGroupSize', 'Body_mass_female_mean')] %>%drop_na()
+final = boot_lm(df_drop, 'log(MeanGroupSize) ~ log(Body_mass_female_mean)', reps = 10)
+final = final[,c('beta', 'Estimate', 'estimate_sample', 'lower_sample', 'upper_sample')]
+final[['reps']] = 10
+for (i in 1:38){
+  t = boot_lm(df_drop, 'log(MeanGroupSize) ~ log(Body_mass_female_mean)', reps = i * 5 + 10)
+  t = t[,c('beta', 'Estimate', 'estimate_sample', 'lower_sample', 'upper_sample')]
+  t[['reps']] = i * 5 + 10
+  final = data.frame(rbind(final, t))
+}
+final = final %>% filter(beta == 'log(Body_mass_female_mean)')
+final = final[, !names(final) %in% c('beta')]
+final_m = melt(final, id = 'reps')
+ggplot(data = final_m) + geom_line(aes(x = reps, y = value, color = variable))
+```
+
+
